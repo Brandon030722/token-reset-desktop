@@ -350,7 +350,8 @@ public sealed class MainWindow : Window
 
     private async Task WeeklyEmailAsync(bool enabled)
     {
-        if (!await pollGate.WaitAsync(0)) return;
+        if (emailBusy) return;
+        await pollGate.WaitAsync();
         try
         {
             await EmitAsync(JsonSerializer.SerializeToElement(new { status = "running" }));
@@ -441,6 +442,12 @@ public sealed class MainWindow : Window
             await Task.Delay(500);
             string mail = await web.CoreWebView2.ExecuteScriptAsync("window.__qaMail?.message");
             if (JsonSerializer.Deserialize<string>(mail) != "请先使用邀请码订阅。") throw new IOException("Mail bridge unavailable");
+            await web.CoreWebView2.ExecuteScriptAsync("Promise.all(['/mail-session.json','/monitor.config.json','/state.sqlite3'].map(p=>fetch(p).then(r=>r.status))).then(r=>window.__qaPrivate=r)");
+            await Task.Delay(500);
+            string boundary = await web.CoreWebView2.ExecuteScriptAsync("JSON.stringify(window.__qaPrivate)");
+            if (JsonSerializer.Deserialize<string>(boundary) != "[404,404,404]") throw new IOException("Private resources exposed");
+            using (var screenshot = File.Create(Path.Combine(home, "windows-panel.png")))
+                await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, screenshot);
             Close();
             if (IsVisible || closing || !tray.Visible) throw new IOException("Close did not retain tray");
             ShowPanel();
@@ -474,7 +481,8 @@ public sealed class MainWindow : Window
         string? state = result.GetProperty("status").GetString();
         status.Text = state switch
         {
-            "running" => "正在检查公开 RSS…",
+            "running" => "正在检查公开动态与每周额度…",
+            "paused" => "监控已暂停 · 右键 T! 可恢复",
             "cooldown" => "15 分钟间隔内不重复请求来源。",
             "source-unavailable" => "公开来源暂时不可用，已保留历史记录，本轮不发信。",
             "ok" => "检查完成 · 每 15 分钟检查一次" + (dryRun ? " · 仅测试，不发信" : ""),

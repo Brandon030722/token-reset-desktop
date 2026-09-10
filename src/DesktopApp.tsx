@@ -114,6 +114,7 @@ export default function DesktopApp() {
       if (!window.__TIBO_DESKTOP__) return;
       fetch(import.meta.env.BASE_URL + 'notification-status.json', { cache: 'no-store' }).then(r => r.json()).then(value => {
         if (!active) return;
+        if (value.platform === 'windows') setNoticeMessage('Windows 托盘通知由系统管理；请检查通知设置和勿扰模式。');
         if (typeof value.permissionGranted === 'boolean') { setPermission(value.permissionGranted); setNoticeMessage(value.permissionGranted ? '已获系统授权，横幅显示仍取决于系统设置。' : '请在系统设置中允许通知。'); }
         if (value.testInNotificationCenter === true) setNoticeMessage('测试通知已进入通知中心。是否弹出横幅由系统设置决定。');
         else if (value.testAccepted === true) setNoticeMessage('测试通知已提交给系统，正在确认投递状态。');
@@ -133,7 +134,7 @@ export default function DesktopApp() {
   useEffect(() => { if (!mailBusy) return; const timeout = window.setTimeout(() => { setMailBusy(false); setMailMessage('连接超时，请检查状态后重试。'); }, 35_000); return () => clearTimeout(timeout); }, [mailBusy]);
 
   function notify(action: 'authorize' | 'test') {
-    setNoticeMessage(notificationOnDesktop(action) ? (action === 'test' ? '正在发送测试通知…' : '正在检查系统授权…') : '请在独立应用中操作。');
+    setNoticeMessage(notificationOnDesktop(action) ? (!isMac ? (action === 'test' ? '已请求发送 Windows 测试通知；横幅显示取决于系统设置。' : 'Windows 托盘通知由系统管理；请检查通知设置和勿扰模式。') : action === 'test' ? '正在发送测试通知…' : '正在检查系统授权…') : '请在独立应用中操作。');
   }
 
   useEffect(() => {
