@@ -1,10 +1,17 @@
 name: Build native desktop apps
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platforms to build
+        type: choice
+        options: [all, windows, macos]
+        default: all
 permissions:
   contents: read
 jobs:
   macos:
+    if: inputs.platform != 'windows'
     # The Swift shell currently targets arm64; use the standard Apple Silicon runner.
     runs-on: macos-15
     timeout-minutes: 20
@@ -32,6 +39,7 @@ jobs:
           retention-days: 7
 
   windows:
+    if: inputs.platform != 'macos'
     runs-on: windows-2025
     timeout-minutes: 25
     steps:
@@ -49,12 +57,12 @@ jobs:
           dotnet-version: '8.0.x'
       - run: npm ci
       - name: Test frontend data contract
-        run: npm exec -- tsx --test tests/*.test.ts
+        run: npm test
       - run: npm run build
       - name: Build WPF and WebView2 app
         # This script runs Python tests and helper --help, without live polling or sending.
         shell: pwsh
-        run: ./scripts/build_windows.ps1 -Runtime win-x64 -SkipFrontend
+        run: ./scripts/build_windows.ps1 -Runtime win-x64 -SkipFrontend -SelfContained
       - uses: actions/upload-artifact@v4
         with:
           name: TiboMonitor-Windows-x64

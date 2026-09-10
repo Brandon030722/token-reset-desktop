@@ -39,7 +39,7 @@ with (root / "Contents/Info.plist").open("wb") as f:
         "CFBundleName": "Token重置", "CFBundleDisplayName": "Token重置",
         "CFBundleIdentifier": "org.tibo-reset.observatory",
         "CFBundleExecutable": "TiboMonitor", "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": version, "CFBundleVersion": "12",
+        "CFBundleShortVersionString": version, "CFBundleVersion": "13",
         "LSUIElement": True,
         "CFBundleIconFile": "AppIcon", "LSMinimumSystemVersion": "13.0",
         "NSHighResolutionCapable": True,

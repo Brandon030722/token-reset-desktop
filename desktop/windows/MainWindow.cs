@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using Forms = System.Windows.Forms;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -16,7 +19,7 @@ namespace TiboMonitor.Windows;
 public sealed class MainWindow : Window
 {
     private const string Origin = "https://tibo.invalid";
-    private readonly string home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".tibo-reset");
+    private readonly string home;
     private readonly string site = Path.Combine(AppContext.BaseDirectory, "site");
     private readonly bool dryRun;
     private readonly WebView2 web = new();
@@ -27,14 +30,43 @@ public sealed class MainWindow : Window
     private Process? helper;
     private bool closing;
     private bool didStart;
+    private bool paused;
+    private bool emailBusy;
+    private readonly Forms.NotifyIcon tray;
+    private readonly bool smokeTest;
+    private readonly EmailAccess emailAccess;
     private JsonElement? latestResult;
     private CoreWebView2Environment? environment;
 
-    public MainWindow(bool dryRun)
+    public MainWindow(bool dryRun, string? smokeDirectory = null)
     {
         this.dryRun = dryRun;
+        smokeTest = smokeDirectory != null;
+        home = smokeDirectory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".tibo-reset");
+        Directory.CreateDirectory(home);
+        // Python replacements inherit these permissions as well; no shared-user credentials.
+        var acl = new DirectorySecurity();
+        acl.SetAccessRuleProtection(true, false);
+        foreach (var identity in new[] { WindowsIdentity.GetCurrent().User!, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+            acl.AddAccessRule(new FileSystemAccessRule(identity, FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        new DirectoryInfo(home).SetAccessControl(acl);
+        emailAccess = new EmailAccess(home, site);
+        tray = new Forms.NotifyIcon { Text = "Token重置", Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!), Visible = true };
+        var trayMenu = new Forms.ContextMenuStrip();
+        trayMenu.Items.Add("打开面板", null, (_, _) => ShowPanel());
+        trayMenu.Items.Add("立即检查", null, async (_, _) => await CheckAsync());
+        var pause = trayMenu.Items.Add("暂停监控");
+        pause.Click += async (_, _) => { paused = !paused; pause.Text = paused ? "恢复监控" : "暂停监控"; if (paused) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "paused" })); else await CheckAsync(); };
+        var advanced = new Forms.ToolStripMenuItem("高级选项");
+        advanced.DropDownItems.Add("发送测试通知", null, (_, _) => TestNotification());
+        trayMenu.Items.Add(advanced);
+        trayMenu.Items.Add("退出", null, (_, _) => { closing = true; Close(); });
+        tray.ContextMenuStrip = trayMenu;
+        tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) ShowPanel(); };
+        tray.BalloonTipClicked += (_, _) => ShowPanel();
         Title = "Token重置";
-        Width = 760;
+        Width = 620;
         Height = 650;
         MinWidth = 380;
         MinHeight = 500;
@@ -55,7 +87,7 @@ public sealed class MainWindow : Window
         Content = layout;
         CommandBindings.Add(new CommandBinding(NavigationCommands.Refresh, async (_, _) => await CheckAsync()));
         InputBindings.Add(new KeyBinding(NavigationCommands.Refresh, new KeyGesture(Key.R, ModifierKeys.Control)));
-        Loaded += async (_, _) => await InitializeAsync();
+        Loaded += async (_, _) => { if (!didStart && web.CoreWebView2 is null) await InitializeAsync(); };
         StateChanged += async (_, _) => await UpdateVisibilityAsync();
         timer.Tick += async (_, _) => await CheckAsync();
     }
@@ -112,12 +144,24 @@ public sealed class MainWindow : Window
                 if (!IsPage(e.Source) || !IsPage(core.Source) || closing) return;
                 try
                 {
-                    if (e.WebMessageAsJson.Length > 1024) return;
+                    if (e.WebMessageAsJson.Length > 2048) return;
                     using var message = JsonDocument.Parse(e.WebMessageAsJson);
-                    if (message.RootElement.ValueKind == JsonValueKind.Object &&
-                        message.RootElement.TryGetProperty("type", out var type) &&
-                        type.ValueKind == JsonValueKind.String && type.GetString() == "monitor.check")
-                        await CheckAsync();
+                    var body = message.RootElement;
+                    if (body.ValueKind != JsonValueKind.Object || !body.TryGetProperty("type", out var type) || type.ValueKind != JsonValueKind.String) return;
+                    switch (type.GetString())
+                    {
+                        case "monitor.check": await CheckAsync(); break;
+                        case "weekly.email":
+                            if (body.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                                await WeeklyEmailAsync(enabled.GetBoolean());
+                            break;
+                        case "email.subscribe": case "email.status": case "email.cancel":
+                            string Get(string key) => body.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
+                            await EmailAsync(type.GetString()![6..], Get("email"), Get("code")); break;
+                        case "notification.test": TestNotification(); break;
+                        case "notification.authorize":
+                            await web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new Event('tibo:notification'))"); break;
+                    }
                 }
                 catch (JsonException) { }
             };
@@ -134,6 +178,7 @@ public sealed class MainWindow : Window
                 if (!didStart)
                 {
                     didStart = true;
+                    if (smokeTest) { await SmokeTestAsync(); return; }
                     timer.Start();
                     await CheckAsync();
                 }
@@ -185,8 +230,18 @@ public sealed class MainWindow : Window
             string path = Uri.UnescapeDataString(new Uri(e.Request.Uri).AbsolutePath);
             if (path == "/config.json")
             {
-                // No legacy hosted form is exposed. Windows currently remains dashboard-only.
-                Reply(e, 200, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(new { subscriptionConfigured = false, subscriptionStatus = "none", emailDelivery = "cloud" }));
+                Reply(e, 200, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(emailAccess.PublicState().ToJsonString()));
+                return;
+            }
+            if (path == "/notification-status.json")
+            {
+                Reply(e, 200, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(new { platform = "windows", permissionGranted = (bool?)null }));
+                return;
+            }
+            if (path == "/codex-usage.json")
+            {
+                string file = Path.Combine(home, "codex-usage.json");
+                Reply(e, File.Exists(file) ? 200 : 404, "application/json; charset=utf-8", File.Exists(file) ? ReadSmallFile(file, 65536) : "{}"u8.ToArray());
                 return;
             }
             if (path is "/data/snapshot.json" or "/data/health.json")
@@ -241,65 +296,141 @@ public sealed class MainWindow : Window
 
     private async Task CheckAsync()
     {
-        if (closing || web.CoreWebView2 is null) return;
-        if (!await pollGate.WaitAsync(0))
-        {
-            await EmitAsync(JsonSerializer.SerializeToElement(new { status = "running" }));
-            return;
-        }
+        if (closing || smokeTest) return;
+        if (paused) { await EmitAsync(JsonSerializer.SerializeToElement(new { status = "paused" })); return; }
+        if (!await pollGate.WaitAsync(0)) return;
         try
         {
             await EmitAsync(JsonSerializer.SerializeToElement(new { status = "running" }));
-            if (closing) return;
-            string executable = Path.Combine(AppContext.BaseDirectory, "monitor", "TiboMonitorHelper.exe");
-            if (!File.Exists(executable)) throw new FileNotFoundException("Monitor helper missing");
-            var start = new ProcessStartInfo(executable)
-            {
-                UseShellExecute = false, CreateNoWindow = true,
-                RedirectStandardOutput = true, RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
-                WorkingDirectory = home
-            };
-            foreach (string arg in new[] { "--once", "--config", Path.Combine(home, "monitor.config.json"),
-                         "--state", Path.Combine(home, "state.sqlite3"), "--output", Path.Combine(home, "data") })
-                start.ArgumentList.Add(arg);
-            if (dryRun) start.ArgumentList.Add("--dry-run");
-            // Desktop sending requires an explicit local-file switch, never an inherited process flag.
-            start.Environment.Remove("TIBO_SEND_EMAIL");
-            start.Environment["PYTHONUTF8"] = "1";
-            start.Environment["PYTHONIOENCODING"] = "utf-8";
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-            timeout.CancelAfter(TimeSpan.FromSeconds(90));
+            // Suppress pre-install history before the first collection.
+            await RunHelperAsync(["--local-notification-candidate"], 10);
+            await RunHelperAsync(["--local-notification-candidate", "--weekly"], 10);
+            var result = await RunHelperAsync(["--once", "--output", Path.Combine(home, "data")], 90);
+            await RunHelperAsync(["--read-codex-usage"], 50);
+            await EmitAsync(paused ? JsonSerializer.SerializeToElement(new { status = "paused" }) : result);
+            if (!paused && !dryRun) { await InspectNotificationAsync(false); await InspectNotificationAsync(true); }
+        }
+        catch (Exception ex)
+        {
+            if (!closing) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "failed", reason = ex.GetType().Name }));
+        }
+        finally { pollGate.Release(); }
+    }
+
+    private async Task<JsonElement> RunHelperAsync(string[] arguments, int seconds)
+    {
+        string executable = Path.Combine(AppContext.BaseDirectory, "monitor", "TiboMonitorHelper.exe");
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8,
+            WorkingDirectory = home
+        };
+        foreach (string arg in arguments.Concat(new[] { "--config", Path.Combine(home, "monitor.config.json"), "--state", Path.Combine(home, "state.sqlite3") })) start.ArgumentList.Add(arg);
+        if (dryRun) start.ArgumentList.Add("--dry-run");
+        start.Environment.Remove("TIBO_SEND_EMAIL");
+        start.Environment["PYTHONUTF8"] = "1"; start.Environment["PYTHONIOENCODING"] = "utf-8";
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+        try
+        {
             helper = Process.Start(start) ?? throw new IOException("Monitor helper did not start");
             var stdout = ReadBoundedAsync(helper.StandardOutput, timeout.Token);
             var stderr = ReadBoundedAsync(helper.StandardError, timeout.Token);
             await helper.WaitForExitAsync(timeout.Token);
-            string result = await stdout;
-            await stderr; // Drain without displaying or logging potentially sensitive diagnostics.
-            using var parsed = JsonDocument.Parse(result.Trim());
-            JsonElement value = parsed.RootElement;
-            if (value.ValueKind != JsonValueKind.Object ||
-                !value.TryGetProperty("status", out var state) || state.ValueKind != JsonValueKind.String ||
-                state.GetString() is not ("ok" or "cooldown" or "source-unavailable" or "failed") ||
-                helper.ExitCode is not (0 or 1 or 2))
-                throw new InvalidDataException("Unexpected monitor result");
-            await EmitAsync(value.Clone());
+            string output = await stdout; await stderr;
+            using var parsed = JsonDocument.Parse(output.Trim());
+            if (parsed.RootElement.ValueKind != JsonValueKind.Object || !parsed.RootElement.TryGetProperty("status", out _) || helper.ExitCode is not (0 or 1 or 2)) throw new IOException("Invalid helper result");
+            return parsed.RootElement.Clone();
         }
-        catch (OperationCanceledException)
+        finally { KillHelper(); helper?.Dispose(); helper = null; }
+    }
+
+    private async Task WeeklyEmailAsync(bool enabled)
+    {
+        if (!await pollGate.WaitAsync(0)) return;
+        try
         {
-            KillHelper();
-            if (!closing) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "failed", reason = "Timeout", action = "本次检查超过 90 秒，已停止。等待下一轮检查。" }));
+            await EmitAsync(JsonSerializer.SerializeToElement(new { status = "running" }));
+            var result = await RunHelperAsync(["--weekly-email", enabled ? "on" : "off"], 50);
+            await EmitAsync(JsonSerializer.SerializeToElement(new { status = result.GetProperty("status").GetString() == "failed" ? "failed" : "cooldown" }));
+        }
+        catch (Exception) { if (!closing) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "failed" })); }
+        finally { pollGate.Release(); }
+    }
+
+    private async Task EmailAsync(string action, string email, string code)
+    {
+        if (emailBusy) return;
+        emailBusy = true;
+        string message;
+        // Serialize session writes with the helper's weekly preference writes.
+        await pollGate.WaitAsync();
+        try { message = await emailAccess.RequestAsync(action, email, code, lifetime.Token); }
+        catch (Exception) { message = "暂时无法连接邮件服务，已有云端预约不受影响。"; }
+        finally { pollGate.Release(); emailBusy = false; }
+        if (closing || web.CoreWebView2 is null) return;
+        var state = emailAccess.PublicState(); state["message"] = message;
+        try { await web.CoreWebView2.ExecuteScriptAsync("window.dispatchEvent(new CustomEvent('tibo:email',{detail:" + state.ToJsonString() + "}))"); }
+        catch (Exception) { }
+        if (!smokeTest) await CheckAsync();
+    }
+
+    private async Task InspectNotificationAsync(bool weekly)
+    {
+        string[] suffix = weekly ? ["--weekly"] : [];
+        var candidate = await RunHelperAsync(["--local-notification-candidate", .. suffix], 10);
+        if (candidate.GetProperty("status").GetString() != "candidate" || paused || closing) return;
+        string eventId = candidate.GetProperty("candidate").GetProperty("eventId").GetString()!;
+        var claim = await RunHelperAsync(["--claim-local-notification", eventId, .. suffix], 10);
+        if (claim.GetProperty("status").GetString() != "claimed") return;
+        var content = claim.GetProperty("candidate");
+        // ShowBalloonTip acceptance is not proof of a visible banner (Focus Assist may hide it).
+        // Claim before submission; uncertain outcomes stay claimed and are never resent automatically.
+        tray.ShowBalloonTip(8000, content.GetProperty("title").GetString(), content.GetProperty("body").GetString(), Forms.ToolTipIcon.Info);
+        await RunHelperAsync(["--ack-local-notification", eventId, "--claim-token", claim.GetProperty("claimToken").GetString()!, .. suffix], 10);
+    }
+
+    private void TestNotification()
+    {
+        tray.ShowBalloonTip(8000, "Token重置 · 测试通知", "通知已提交给 Windows。若未显示，请检查通知设置或勿扰模式。", Forms.ToolTipIcon.Info);
+    }
+
+    private void ShowPanel()
+    {
+        Show(); WindowState = WindowState.Normal; Activate();
+        _ = UpdateVisibilityAsync();
+    }
+
+    private async Task SmokeTestAsync()
+    {
+        try
+        {
+            // Isolated build validation. No collection, subscription or email requests.
+            await Task.Delay(1500);
+            string page = await web.CoreWebView2.ExecuteScriptAsync("JSON.stringify({title:document.title,tabs:document.querySelectorAll('[role=tab]').length,bridge:window.__TIBO_DESKTOP__?.platform})");
+            using var result = JsonDocument.Parse(JsonSerializer.Deserialize<string>(page)!);
+            if (result.RootElement.GetProperty("tabs").GetInt32() != 4 || result.RootElement.GetProperty("bridge").GetString() != "windows") throw new IOException("Dashboard did not load");
+            if (EmailAccess.ValidateEndpoint("http://example.com") != null || EmailAccess.ValidateEndpoint("https://example.com/path") != null) throw new IOException("Unsafe endpoint accepted");
+            var state = emailAccess.PublicState();
+            if (state["subscriptionConfigured"]?.GetValue<bool>() != true || state.ContainsKey("token")) throw new IOException("Invalid mail configuration");
+            // Exercise the actual JS-to-native bridge; no saved token means no HTTP request.
+            await web.CoreWebView2.ExecuteScriptAsync("window.addEventListener('tibo:email',e=>window.__qaMail=e.detail,{once:true});window.chrome.webview.postMessage({type:'email.status'})");
+            await Task.Delay(500);
+            string mail = await web.CoreWebView2.ExecuteScriptAsync("window.__qaMail?.message");
+            if (JsonSerializer.Deserialize<string>(mail) != "请先使用邀请码订阅。") throw new IOException("Mail bridge unavailable");
+            Close();
+            if (IsVisible || closing || !tray.Visible) throw new IOException("Close did not retain tray");
+            ShowPanel();
+            if (!IsVisible) throw new IOException("Tray did not reopen window");
+            File.WriteAllText(Path.Combine(home, "smoke-result.json"), JsonSerializer.Serialize(new { status = "passed", checks = new[] { "webview-dashboard", "four-tabs", "private-resource-boundary", "email-native-bridge", "close-to-tray", "reopen" } }));
+            closing = true; Close();
         }
         catch (Exception ex)
         {
-            KillHelper();
-            if (!closing) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "failed", reason = ex.GetType().Name, action = "请检查本机配置与安装包；未自动重试邮件。" }));
-        }
-        finally
-        {
-            helper?.Dispose();
-            helper = null;
-            pollGate.Release();
+            File.WriteAllText(Path.Combine(home, "smoke-result.json"), JsonSerializer.Serialize(new { status = "failed", reason = ex.Message }));
+            closing = true; Close();
         }
     }
 
@@ -328,7 +459,7 @@ public sealed class MainWindow : Window
             "ok" => "检查完成 · 每 15 分钟检查一次" + (dryRun ? " · 仅测试，不发信" : ""),
             _ => "本次检查未完成，请检查本机配置。"
         };
-        if (closing || web.CoreWebView2 is null || !IsPage(web.CoreWebView2.Source) || WindowState == WindowState.Minimized) return;
+        if (closing || !IsVisible || web.CoreWebView2 is null || !IsPage(web.CoreWebView2.Source) || WindowState == WindowState.Minimized) return;
         try
         {
             await web.CoreWebView2.ExecuteScriptAsync(
@@ -342,7 +473,7 @@ public sealed class MainWindow : Window
         if (closing || web.CoreWebView2 is null) return;
         try
         {
-            if (WindowState == WindowState.Minimized)
+            if (!IsVisible || WindowState == WindowState.Minimized)
             {
                 web.Visibility = Visibility.Collapsed;
                 await web.CoreWebView2.TrySuspendAsync();
@@ -364,12 +495,19 @@ public sealed class MainWindow : Window
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception) { }
     }
 
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (!closing) { e.Cancel = true; Hide(); _ = UpdateVisibilityAsync(); }
+        base.OnClosing(e);
+    }
+
     protected override void OnClosed(EventArgs e)
     {
         closing = true;
         timer.Stop();
         lifetime.Cancel();
         KillHelper();
+        tray.Visible = false; tray.ContextMenuStrip?.Dispose(); tray.Icon?.Dispose(); tray.Dispose();
         web.Dispose();
         base.OnClosed(e);
     }

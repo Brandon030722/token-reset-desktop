@@ -111,7 +111,7 @@ export default function DesktopApp() {
     const onEmail = (event: Event) => applyEmailState((event as CustomEvent<Record<string, unknown>>).detail ?? {});
     window.addEventListener('tibo:email', onEmail);
     const readNotification = () => {
-      if (!isMac) return;
+      if (!window.__TIBO_DESKTOP__) return;
       fetch(import.meta.env.BASE_URL + 'notification-status.json', { cache: 'no-store' }).then(r => r.json()).then(value => {
         if (!active) return;
         if (typeof value.permissionGranted === 'boolean') { setPermission(value.permissionGranted); setNoticeMessage(value.permissionGranted ? '已获系统授权，横幅显示仍取决于系统设置。' : '请在系统设置中允许通知。'); }
@@ -128,12 +128,12 @@ export default function DesktopApp() {
   function mailAction(action: 'subscribe' | 'status' | 'cancel') {
     const message = action === 'subscribe' ? { type: 'email.subscribe' as const, email, code: inviteCode } : { type: ('email.' + action) as 'email.status' | 'email.cancel' };
     setMailBusy(true); setMailMessage('正在连接邮件服务…');
-    if (!emailOnDesktop(message)) { setMailBusy(false); setMailMessage('请在 macOS 独立应用中操作。'); }
+    if (!emailOnDesktop(message)) { setMailBusy(false); setMailMessage('请在独立应用中操作。'); }
   }
   useEffect(() => { if (!mailBusy) return; const timeout = window.setTimeout(() => { setMailBusy(false); setMailMessage('连接超时，请检查状态后重试。'); }, 35_000); return () => clearTimeout(timeout); }, [mailBusy]);
 
   function notify(action: 'authorize' | 'test') {
-    setNoticeMessage(notificationOnDesktop(action) ? (action === 'test' ? '正在发送测试通知…' : '正在检查系统授权…') : '请在 macOS 独立应用中操作。');
+    setNoticeMessage(notificationOnDesktop(action) ? (action === 'test' ? '正在发送测试通知…' : '正在检查系统授权…') : '请在独立应用中操作。');
   }
 
   useEffect(() => {
@@ -290,15 +290,15 @@ export default function DesktopApp() {
           {mailMessage && <p className="token-feedback" role="status">{mailMessage}</p>}
         </div>
         <div className="token-reminder-block">
-          <div className="token-section-heading"><h2>系统通知</h2><span>{!isMac ? '仅 macOS 可用' : permission === null ? '待核对权限' : permission ? '已获授权' : '未获授权'}</span></div>
+          <div className="token-section-heading"><h2>系统通知</h2><span>{!isMac ? 'Windows 托盘通知' : permission === null ? '待核对权限' : permission ? '已获授权' : '未获授权'}</span></div>
           <p>广泛重置信号评分 ≥80 分、新的小范围公告，或个人每周恢复时间到达时提醒。</p>
         </div>
         <details className="token-advanced"><summary>高级选项</summary>
-          <div className="token-notification-actions"><button onClick={() => notify('authorize')} disabled={!isMac}>检查通知权限</button><button onClick={() => notify('test')} disabled={!isMac}>发送测试通知</button><button onClick={() => setDemo(value => !value)} aria-pressed={demo}>{demo ? '返回实时数据' : '查看演示数据'}</button></div>
+          <div className="token-notification-actions"><button onClick={() => notify('authorize')} disabled={!window.__TIBO_DESKTOP__}>检查通知权限</button><button onClick={() => notify('test')} disabled={!window.__TIBO_DESKTOP__}>发送测试通知</button><button onClick={() => setDemo(value => !value)} aria-pressed={demo}>{demo ? '返回实时数据' : '查看演示数据'}</button></div>
           {noticeMessage && <p className="token-feedback" role="status">{noticeMessage}</p>}
         </details>
       </section>
     </main>
-    <footer className="token-footer"><p>{isMac ? '每 15 分钟检查 · 关闭面板继续监控' : '每 15 分钟检查 · 关闭窗口后停止'}</p></footer>
+    <footer className="token-footer"><p>每 15 分钟检查 · 关闭面板继续监控</p></footer>
   </div>;
 }

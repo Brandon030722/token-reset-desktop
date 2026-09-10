@@ -41,7 +41,7 @@ try {
     Invoke-Checked $Python @("-m", "venv", (Join-Path $work "venv"))
     $buildPython = Join-Path $work "venv\Scripts\python.exe"
     Invoke-Checked $buildPython @("-m", "pip", "install", "pyinstaller==6.16.0")
-    Invoke-Checked $buildPython @("-m", "unittest", "discover", "-s", "tests", "-p", "test_monitor.py")
+    Invoke-Checked $buildPython @("-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py")
     Invoke-Checked $buildPython @(
         "-m", "PyInstaller", "--clean", "--noconfirm", "--onedir", "--console",
         "--name", "TiboMonitorHelper", "--paths", $projectRoot,
@@ -62,12 +62,26 @@ try {
     Copy-Item -Recurse (Join-Path $work "helper-dist\TiboMonitorHelper") (Join-Path $output "monitor")
     New-Item -ItemType Directory -Force -Path (Join-Path $output "site") | Out-Null
     Copy-Item "dist\index.html" (Join-Path $output "site\index.html")
+    Copy-Item "dist\config.json" (Join-Path $output "site\config.json")
+    Copy-Item "desktop\assets\AppIcon.ico" (Join-Path $output "AppIcon.ico")
+    Copy-Item "LICENSE" (Join-Path $output "LICENSE")
     Copy-Item "dist\favicon.svg" (Join-Path $output "site\favicon.svg")
     Copy-Item -Recurse "dist\assets" (Join-Path $output "site\assets")
     Copy-Item "desktop\windows\README.md" (Join-Path $output "README-Windows.md")
     Copy-Item "monitor.config.example.json" (Join-Path $output "monitor.config.example.json")
     # Help exits before polling and does not write user monitoring state.
     Invoke-Checked (Join-Path $output "monitor\TiboMonitorHelper.exe") @("--once", "--help")
+    # Launch the packaged app in a disposable profile with all collection/sending disabled.
+    $smoke = Join-Path $work "smoke-profile"
+    New-Item -ItemType Directory -Force -Path $smoke | Out-Null
+    $resultFile = Join-Path $smoke "smoke-result.json"
+    if (Test-Path $resultFile) { Remove-Item $resultFile }
+    $app = Start-Process -FilePath (Join-Path $output "TiboMonitor.exe") -ArgumentList @("--smoke-test", "`"$smoke`"") -PassThru
+    if (-not $app.WaitForExit(90000)) { Stop-Process -Id $app.Id -Force; throw "Packaged UI smoke test timed out" }
+    if (-not (Test-Path $resultFile)) { throw "Packaged UI smoke test did not finish" }
+    $result = Get-Content $resultFile -Raw | ConvertFrom-Json
+    if ($result.status -ne "passed") { throw "Packaged UI smoke test failed: $($result.reason)" }
+    Write-Output "Packaged UI smoke test passed: $($result.checks -join ', ')"
     $archive = "$output.zip"
     if (Test-Path $archive) { Remove-Item -Force $archive }
     Compress-Archive -Path $output -DestinationPath $archive -CompressionLevel Optimal

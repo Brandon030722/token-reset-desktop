@@ -45,23 +45,21 @@ export function describeDesktopStatus(detail: DesktopStatus): string {
   }
 }
 
+function postDesktop(message: unknown): boolean {
+  if (window.__TIBO_DESKTOP__?.platform === 'macos' && window.webkit?.messageHandlers?.tibo) {
+    window.webkit.messageHandlers.tibo.postMessage(message); return true;
+  }
+  if (window.__TIBO_DESKTOP__?.platform === 'windows' && window.chrome?.webview) {
+    window.chrome.webview.postMessage(message); return true;
+  }
+  return false;
+}
 export function notificationOnDesktop(action: 'authorize' | 'test'): boolean {
-  const bridge = window.webkit?.messageHandlers?.tibo;
-  if (window.__TIBO_DESKTOP__?.platform !== 'macos' || !bridge) return false;
-  bridge.postMessage({ type: 'notification.' + action });
-  return true;
+  return postDesktop({ type: 'notification.' + action });
 }
-
 export function weeklyEmailOnDesktop(enabled: boolean): boolean {
-  const bridge = window.webkit?.messageHandlers?.tibo;
-  if (window.__TIBO_DESKTOP__?.platform !== 'macos' || !bridge) return false;
-  bridge.postMessage({ type: 'weekly.email', enabled });
-  return true;
+  return postDesktop({ type: 'weekly.email', enabled });
 }
-
 export function emailOnDesktop(message: { type: 'email.subscribe'; email: string; code: string } | { type: 'email.status' } | { type: 'email.cancel' }): boolean {
-  const bridge = window.webkit?.messageHandlers?.tibo;
-  if (window.__TIBO_DESKTOP__?.platform !== 'macos' || !bridge) return false;
-  bridge.postMessage(message);
-  return true;
+  return postDesktop(message);
 }

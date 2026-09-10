@@ -19,7 +19,8 @@ public partial class App : Application
             Shutdown();
             return;
         }
-        MainWindow = new MainWindow(e.Args.Contains("--dry-run", StringComparer.Ordinal));
+        string? smokeDirectory = e.Args.Length == 2 && e.Args[0] == "--smoke-test" ? System.IO.Path.GetFullPath(e.Args[1]) : null;
+        MainWindow = new MainWindow(e.Args.Contains("--dry-run", StringComparer.Ordinal), smokeDirectory);
         MainWindow.Show();
     }
 

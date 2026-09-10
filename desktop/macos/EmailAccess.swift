@@ -46,7 +46,7 @@ final class EmailAccess {
         var req = URLRequest(url: base.appendingPathComponent("v1/" + action)); req.timeoutInterval = 30
         req.httpMethod = action == "status" ? "GET" : "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("TokenResetDesktop/0.1.1", forHTTPHeaderField: "User-Agent")
+        req.setValue("TokenResetDesktop/0.1.2", forHTTPHeaderField: "User-Agent")
         let saved = session
         if action == "subscribe" {
             guard email.count <= 254, invite.count <= 128 else { completion("邮箱或邀请码过长。",false); return }

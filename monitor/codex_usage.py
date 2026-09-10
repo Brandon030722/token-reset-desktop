@@ -87,7 +87,7 @@ def read_local(config):
             if 'error' in response: raise CodexUnavailable('codex-request-failed')
             return response.get('result', {})
     try:
-        request(1, 'initialize', {'clientInfo': {'name': 'token_reset_monitor', 'version': '0.1.1'}})
+        request(1, 'initialize', {'clientInfo': {'name': 'token_reset_monitor', 'version': '0.1.2'}})
         send({'method': 'initialized'})
         before = request(2, 'account/read', {'refreshToken': False}).get('account') or {}
         if before.get('type') != 'chatgpt': raise CodexUnavailable('chatgpt-login-required')

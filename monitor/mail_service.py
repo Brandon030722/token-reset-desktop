@@ -29,7 +29,7 @@ def read_session(directory):
 def request(session, payload):
     req = urllib.request.Request(session['serviceUrl'].rstrip('/')+'/v1/schedule',
         data=json.dumps(payload).encode(), method='POST', headers={
-            'Content-Type':'application/json', 'User-Agent':'TokenResetDesktop/0.1.1', 'Authorization':'Bearer '+session['token']})
+            'Content-Type':'application/json', 'User-Agent':'TokenResetDesktop/0.1.2', 'Authorization':'Bearer '+session['token']})
     with urllib.request.build_opener(NoRedirect()).open(req, timeout=15) as response:
         raw = response.read(16385)
     if len(raw) > 16384: raise ValueError('Invalid service response')
@@ -77,11 +77,13 @@ def set_enabled(directory, enabled):
     if session.get('subscriptionStatus') != 'active': raise ValueError('Confirm email first')
     session['weeklyEnabled'] = enabled
     path = Path(directory)/'mail-session.json'
-    with tempfile.NamedTemporaryFile(mode='w', dir=directory, prefix='.mail-', delete=False) as handle:
-        temporary = Path(handle.name)
-        try:
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=directory, prefix='.mail-', delete=False) as handle:
+            temporary = Path(handle.name)
             json.dump(session, handle); handle.flush(); os.fsync(handle.fileno())
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        # Windows cannot replace a NamedTemporaryFile while its handle is open.
+        temporary.replace(path)
+    finally:
+        if temporary is not None: temporary.unlink(missing_ok=True)
     return True
