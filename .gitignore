@@ -1,0 +1,31 @@
+node_modules/
+dist/
+.wrangler/
+.local/
+.env
+.env.*
+!.env.example
+.dev.vars
+*.tsbuildinfo
+qa/
+__pycache__/
+*.pyc
+build/
+*.spec
+monitor.config.json
+.monitor/*.lock
+.monitor/draft.html
+.monitor/*.sqlite3-journal
+artifacts/
+
+# Private personal quota state must never be published.
+codex-usage.json
+codex-usage.sqlite3*
+codex-usage.lock
+
+# Desktop releases never publish collected state or machine configuration.
+.monitor/
+public/data/
+web.config.json
+notification-status.json
+*.log

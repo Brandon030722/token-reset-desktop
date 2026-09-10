@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>Token重置</title>
+  <desc>黑色圆角方形，白色几何字母 T 与感叹号。</desc>
+  <rect x="48" y="48" width="416" height="416" rx="100" fill="#080808"/>
+  <path d="M139 168H285V216H237V344H187V216H139Z" fill="#fff"/>
+  <path d="M316 168H365L358 284H323Z" fill="#fff"/>
+  <circle cx="340.5" cy="325" r="23" fill="#fff"/>
+</svg>

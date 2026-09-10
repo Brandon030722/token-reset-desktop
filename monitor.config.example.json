@@ -1,0 +1,19 @@
+{
+  "feeds": [
+    "https://fxtwitter.com/thsottiaux/feed.xml?count=100&with_replies=1"
+  ],
+  "groupId": "",
+  "fromEmail": "",
+  "optInConfirmed": false,
+  "sendEmail": false,
+  "apiKey": "",
+  "mailProvider": "brevo",
+  "listId": "",
+  "maxRecipients": 100,
+  "weeklyCloud": {
+    "enabled": false,
+    "recipient": "",
+    "repository": "",
+    "ghExecutable": ""
+  }
+}
