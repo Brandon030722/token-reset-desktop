@@ -46,6 +46,7 @@ final class EmailAccess {
         var req = URLRequest(url: base.appendingPathComponent("v1/" + action)); req.timeoutInterval = 30
         req.httpMethod = action == "status" ? "GET" : "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("TokenResetDesktop/0.1.1", forHTTPHeaderField: "User-Agent")
         let saved = session
         if action == "subscribe" {
             guard email.count <= 254, invite.count <= 128 else { completion("邮箱或邀请码过长。",false); return }
@@ -66,7 +67,16 @@ final class EmailAccess {
                       let result = try? JSONSerialization.jsonObject(with:data) as? [String:Any] else {
                     completion("暂时无法连接邮件服务，已有云端预约不受本次连接失败影响。",false); return
                 }
-                guard (200...299).contains(response.statusCode) else { completion(result["message"] as? String ?? "验证失败，请稍后再试。",false); return }
+                guard (200...299).contains(response.statusCode) else {
+                    if action == "status" && [401,403].contains(response.statusCode) {
+                        var current = self.session
+                        if current["token"] as? String == saved["token"] as? String {
+                            current["subscriptionStatus"] = "inactive"; current["weeklyEnabled"] = false
+                            try? self.save(current)
+                        }
+                    }
+                    completion(result["message"] as? String ?? "验证失败，请稍后再试。",false); return
+                }
                 var updated = self.session
                 if action != "subscribe" && updated["token"] as? String != saved["token"] as? String {
                     completion("订阅状态已更新，请重新检查。",false); return

@@ -29,7 +29,7 @@ def read_session(directory):
 def request(session, payload):
     req = urllib.request.Request(session['serviceUrl'].rstrip('/')+'/v1/schedule',
         data=json.dumps(payload).encode(), method='POST', headers={
-            'Content-Type':'application/json', 'Authorization':'Bearer '+session['token']})
+            'Content-Type':'application/json', 'User-Agent':'TokenResetDesktop/0.1.1', 'Authorization':'Bearer '+session['token']})
     with urllib.request.build_opener(NoRedirect()).open(req, timeout=15) as response:
         raw = response.read(16385)
     if len(raw) > 16384: raise ValueError('Invalid service response')

@@ -1,8 +1,8 @@
 # Token重置 · Desktop
 
-**当前版本：0.1.0。** 本仓库是 Token重置本地应用的独立版本线，由原项目 0.8.1 拆出；从 v0.1.0 重新开始发布版本，不代表撤回已有功能。
+**当前版本：0.1.1。** 本仓库是 Token重置本地应用的独立版本线，由原项目 0.8.1 拆出；从 v0.1.0 重新开始发布版本，不代表撤回已有功能。
 
-[下载 macOS Apple Silicon 版](https://github.com/Brandon030722/token-reset-desktop/releases/tag/v0.1.0) · [云端监控与网站](https://github.com/Brandon030722/token-reset)
+[下载 macOS Apple Silicon 版](https://github.com/Brandon030722/token-reset-desktop/releases/tag/v0.1.1) · [云端监控与网站](https://github.com/Brandon030722/token-reset)
 
 ## 本地应用
 
@@ -18,7 +18,7 @@ macOS arm64 构建已经本机验证。Windows WPF/WebView2 源码及手动构�
 
 解压完整的 `Token重置.app`，放入用户的 `~/Applications` 后打开。点击屏幕顶部 T! 查看面板，也可使用 Spotlight 搜索“Token重置”。应用采用本机 ad-hoc 签名，未经过 Apple 公证。
 
-从原版本升级时，先退出旧菜单栏进程，再替换应用；不要同时运行两份。保留原 bundle identifier 和 `~/.tibo-reset` 状态目录，已有配置、通知去重记录、邀请码状态与云端预约继续沿用。显示版本改为 0.1.0，内部构建号继续递增，避免重用旧构建号。
+从原版本升级时，先退出旧菜单栏进程，再替换应用；不要同时运行两份。保留原 bundle identifier 和 `~/.tibo-reset` 状态目录，已有监控配置和通知去重记录保留。旧本地邀请码不再有效，邮件改为云端邀请与邮箱确认；管理员旧预约在新授权完成后先取消再迁移，避免重复发送。内部构建号继续递增。
 
 ## 云端与本地的边界
 
@@ -40,7 +40,7 @@ open artifacts/Token重置.app
 
 `npm run dev` 只预览桌面前端；浏览器没有原生桥接和本机私有数据，不能用它验证系统通知或云端预约开关。原生应用内的所有主界面均随包加载，不依赖网站或本机 HTTP 服务。
 
-版本信息：`package.json` / `package-lock.json` 为 0.1.0，macOS 构建读取 package.json；Windows 项目 Version 与本机 Codex clientInfo 需同步更新。
+版本信息：`package.json` / `package-lock.json` 为 0.1.1，macOS 构建读取 package.json；Windows 项目 Version 与本机 Codex clientInfo 需同步更新。
 
 ## 数据与提醒的限制
 
