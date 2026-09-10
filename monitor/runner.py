@@ -136,14 +136,16 @@ def main(argv=None):
                 raise ValueError("Weekly usage cannot be combined with notification or cloud actions")
             from .codex_usage import refresh
             if args.weekly_email:
-                path = Path(args.config)
-                private = json.loads(path.read_text())
-                settings = private.get('weeklyCloud', {})
-                if not settings.get('repository') or not settings.get('recipient'):
-                    raise ValueError('Private weekly cloud configuration required')
-                settings['enabled'] = args.weekly_email == 'on'
-                private['weeklyCloud'] = settings
-                atomic_json(path, private); path.chmod(0o600)
+                from .mail_service import set_enabled
+                if not set_enabled(Path(args.state).resolve().parent, args.weekly_email == 'on'):
+                    path = Path(args.config)
+                    private = json.loads(path.read_text())
+                    settings = private.get('weeklyCloud', {})
+                    if not settings.get('repository') or not settings.get('recipient'):
+                        raise ValueError('Private weekly cloud configuration required')
+                    settings['enabled'] = args.weekly_email == 'on'
+                    private['weeklyCloud'] = settings
+                    atomic_json(path, private); path.chmod(0o600)
             result = refresh(load_config(args.config), Path(args.state).resolve().parent)
         elif action:
             event_id = args.claim_local_notification or args.ack_local_notification or args.release_local_notification

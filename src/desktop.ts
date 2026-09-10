@@ -59,7 +59,7 @@ export function weeklyEmailOnDesktop(enabled: boolean): boolean {
   return true;
 }
 
-export function emailOnDesktop(message: { type: 'email.invite.verify'; code: string } | { type: 'email.configure'; subscriptionUrl: string } | { type: 'email.subscribe' }): boolean {
+export function emailOnDesktop(message: { type: 'email.subscribe'; email: string; code: string } | { type: 'email.status' } | { type: 'email.cancel' }): boolean {
   const bridge = window.webkit?.messageHandlers?.tibo;
   if (window.__TIBO_DESKTOP__?.platform !== 'macos' || !bridge) return false;
   bridge.postMessage(message);

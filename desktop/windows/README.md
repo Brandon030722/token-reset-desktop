@@ -27,7 +27,7 @@
 - monitor.config.json：来源和监控/邮件配置，只由 Python helper 读取。
 - state.sqlite3：去重记录。
 - data/snapshot.json、data/health.json：网页可读取的公开状态。
-- web.config.json：网页只接收其中经过校验的 subscriptionUrl 字段。
+- web.config.json：不再向网页暴露旧订阅表单。当前 Windows 壳尚未接入邀请制邮件服务，保持看板功能。
 - webview2：系统 WebView 的缓存和 localStorage。
 
 启动后检查一次，以后约每 15 分钟运行 helper。helper 运行完退出；最长运行 90 秒。单实例和进程锁避免重复执行；关闭窗口会停止定时并结束当前 helper。休眠期间不能保证准时检查。最小化时尝试挂起 WebView，恢复时推送最新结果。保留 WebView 本身所需的系统进程，不承诺固定内存数值。
@@ -60,7 +60,7 @@ window.addEventListener('tibo:monitor', event => {
 /favicon.svg
 /data/snapshot.json
 /data/health.json
-/config.json  -> 仅 {"subscriptionUrl":"https://..."}
+/config.json  -> 仅非敏感邮件服务状态（Windows 未接入）
 ~~~
 
 WebResourceRequested 只提供前端资源白名单和两个公开 JSON 文件，拒绝其他资源与远程请求。桥接仅处理本机主文档发出的 monitor.check，没有文件读取、任意命令执行或密钥获取接口。远程主导航、子框架、权限申请和下载均被禁止；用户主动打开的外部 HTTPS 链接由系统处理。

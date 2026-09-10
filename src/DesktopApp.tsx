@@ -31,11 +31,11 @@ function Icon({ name }: { name: 'refresh' | 'external' | 'arrow' }) {
 export default function DesktopApp() {
   const [tab, setTab] = useState<'overview' | 'activity' | 'weekly' | 'reminders'>('overview');
   const [weekly, setWeekly] = useState<WeeklyUsage | null>(null);
-  const [emailDelivery, setEmailDelivery] = useState('local');
+  const [email, setEmail] = useState('');
+  const [mailBusy, setMailBusy] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
-  const [inviteUnlocked, setInviteUnlocked] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState('none');
   const [subscriptionConfigured, setSubscriptionConfigured] = useState(false);
-  const [formUrl, setFormUrl] = useState('');
   const [mailMessage, setMailMessage] = useState('');
   const [noticeMessage, setNoticeMessage] = useState('');
   const [permission, setPermission] = useState<boolean | null>(null);
@@ -100,11 +100,12 @@ export default function DesktopApp() {
     let active = true;
     const applyEmailState = (config: Record<string, unknown>) => {
       if (!active) return;
-      setEmailDelivery(config.emailDelivery === 'cloud' ? 'cloud' : 'local');
-      setInviteUnlocked(config.inviteUnlocked === true);
+      setSubscriptionStatus(typeof config.subscriptionStatus === 'string' ? config.subscriptionStatus : 'none');
+      setMailBusy(false);
+      if (typeof config.email === 'string' && config.email) setEmail(config.email);
       setSubscriptionConfigured(config.subscriptionConfigured === true);
       if (typeof config.message === 'string') setMailMessage(config.message);
-      if (config.inviteUnlocked === true) setInviteCode('');
+      if (config.subscriptionStatus === 'pending' || config.subscriptionStatus === 'active') setInviteCode('');
     };
     fetch(import.meta.env.BASE_URL + 'config.json', { cache: 'no-store' }).then(r => r.json()).then(applyEmailState).catch(() => {});
     const onEmail = (event: Event) => applyEmailState((event as CustomEvent<Record<string, unknown>>).detail ?? {});
@@ -124,15 +125,12 @@ export default function DesktopApp() {
     return () => { active = false; window.removeEventListener('tibo:notification', readNotification); window.removeEventListener('tibo:email', onEmail); };
   }, [isMac]);
 
-  function subscribe() {
-    if (!emailOnDesktop({ type: 'email.subscribe' })) setMailMessage('请在 macOS 独立应用中验证邀请码并订阅。');
+  function mailAction(action: 'subscribe' | 'status' | 'cancel') {
+    const message = action === 'subscribe' ? { type: 'email.subscribe' as const, email, code: inviteCode } : { type: ('email.' + action) as 'email.status' | 'email.cancel' };
+    setMailBusy(true); setMailMessage('正在连接邮件服务…');
+    if (!emailOnDesktop(message)) { setMailBusy(false); setMailMessage('请在 macOS 独立应用中操作。'); }
   }
-  function verifyInvite() {
-    if (!emailOnDesktop({ type: 'email.invite.verify', code: inviteCode })) setMailMessage('请在 macOS 独立应用中验证邀请码。');
-  }
-  function saveForm() {
-    if (!emailOnDesktop({ type: 'email.configure', subscriptionUrl: formUrl })) setMailMessage('请在 macOS 独立应用中保存配置。');
-  }
+  useEffect(() => { if (!mailBusy) return; const timeout = window.setTimeout(() => { setMailBusy(false); setMailMessage('连接超时，请检查状态后重试。'); }, 35_000); return () => clearTimeout(timeout); }, [mailBusy]);
 
   function notify(action: 'authorize' | 'test') {
     setNoticeMessage(notificationOnDesktop(action) ? (action === 'test' ? '正在发送测试通知…' : '正在检查系统授权…') : '请在 macOS 独立应用中操作。');
@@ -277,13 +275,18 @@ export default function DesktopApp() {
       </section>
       <section role="tabpanel" id="panel-reminders" aria-labelledby="tab-reminders" hidden={tab !== 'reminders'}>
         <div className="token-reminder-block">
-          <div className="token-section-heading"><h2>邮件提醒</h2><span>{!inviteUnlocked ? '邀请内测' : subscriptionConfigured ? '可确认订阅' : '服务待配置'}</span></div>
-          <p>广泛重置信号评分 ≥80 分时发信，同一事件一次。{emailDelivery === 'cloud' ? '由云端发送，电脑关机也继续监控。' : '由配置的发信端负责发送。'}</p>
-          {!inviteUnlocked ? <form className="token-email-form" onSubmit={e => { e.preventDefault(); verifyInvite(); }}>
-            <label htmlFor="email-invite">邀请码</label>
-            <div><input id="email-invite" value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="输入邀请码" maxLength={128} autoComplete="off" spellCheck={false} required /><button type="submit" className="token-check-button">验证邀请码</button></div>
-          </form> : <><p className="token-invite-ok">邀请码已通过</p><button className="token-check-button" onClick={subscribe} disabled={!subscriptionConfigured}>前往确认邮箱<Icon name="external" /></button>{!subscriptionConfigured && <p className="token-muted">订阅服务准备中；配置入口在高级选项。</p>}</>}
-          <p className="token-muted">通过 Brevo 确认邮箱，可随时退订。邀请码通过不等于订阅成功。</p>
+          <div className="token-section-heading"><h2>邮件提醒</h2><span>{subscriptionStatus === 'active' ? '已订阅' : subscriptionStatus === 'pending' ? '待确认邮箱' : '凭邀请开启'}</span></div>
+          <p>重要重置信号，由 Token重置 统一发到你的邮箱。</p>
+          {subscriptionStatus === 'active' ? <><p className="token-invite-ok">{email}</p><p className="token-muted">个人周邮件可在「我的额度」单独开启。</p><button className="token-check-button" disabled={mailBusy} onClick={() => mailAction('status')}>检查订阅状态</button><details className="token-email-setup"><summary>管理订阅</summary><p className="token-muted">退订将关闭所有邮件及个人预约。</p><button disabled={mailBusy} onClick={() => mailAction('cancel')}>退订邮件</button></details></> : <>
+            {subscriptionStatus === 'pending' && <><p className="token-invite-ok">{email} · 请先点击确认邮件</p><button className="token-check-button" disabled={mailBusy} onClick={() => mailAction('status')}>检查确认状态</button></>}
+            <form className="token-email-form" onSubmit={e => { e.preventDefault(); mailAction('subscribe'); }}>
+              <label htmlFor="email-address">收件邮箱</label><div><input id="email-address" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="你希望收到提醒的邮箱" maxLength={254} autoComplete="email" required disabled={mailBusy} /></div>
+              <label htmlFor="email-invite">邀请码</label><div><input id="email-invite" type="password" value={inviteCode} onChange={e => setInviteCode(e.target.value)} placeholder="向邀请人获取" maxLength={128} autoComplete="off" spellCheck={false} required disabled={mailBusy} /></div>
+              <button type="submit" className="token-check-button" disabled={mailBusy || !subscriptionConfigured}>{mailBusy ? '正在验证…' : '验证并发送确认邮件'}</button>
+            </form>
+          </>}
+          <p className="token-muted">{!subscriptionConfigured ? '邮件服务准备中，看板可照常使用。' : '无需配置发件邮箱或密钥。确认后订阅，可随时退订。'}</p>
+          <details className="token-email-setup"><summary>提醒规则</summary><p className="token-muted">广泛重置信号评分 ≥80 分时发信，同一事件一次。由云端监控和发送，关机也能收到。</p></details>
           {mailMessage && <p className="token-feedback" role="status">{mailMessage}</p>}
         </div>
         <div className="token-reminder-block">
@@ -291,10 +294,6 @@ export default function DesktopApp() {
           <p>广泛重置信号评分 ≥80 分、新的小范围公告，或个人每周恢复时间到达时提醒。</p>
         </div>
         <details className="token-advanced"><summary>高级选项</summary>
-          <details className="token-email-setup"><summary>配置邮件订阅入口</summary>
-            <p className="token-muted">在 Brevo 创建带邮箱确认的订阅表单，将分享地址粘贴到这里。这里只配置入口，不会开启发信。</p>
-            <form className="token-email-form" onSubmit={e => { e.preventDefault(); saveForm(); }}><label htmlFor="email-form-url">Brevo 表单分享地址</label><input id="email-form-url" type="url" value={formUrl} onChange={e => setFormUrl(e.target.value)} placeholder="https://…" maxLength={2048} required /><button className="token-check-button" type="submit">保存订阅入口</button></form>
-          </details>
           <div className="token-notification-actions"><button onClick={() => notify('authorize')} disabled={!isMac}>检查通知权限</button><button onClick={() => notify('test')} disabled={!isMac}>发送测试通知</button><button onClick={() => setDemo(value => !value)} aria-pressed={demo}>{demo ? '返回实时数据' : '查看演示数据'}</button></div>
           {noticeMessage && <p className="token-feedback" role="status">{noticeMessage}</p>}
         </details>

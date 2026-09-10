@@ -1,3 +1,7 @@
+# 个人每周邮件
+
+普通订阅用户先在「提醒」使用邀请码并确认邮箱，再在「我的额度」开启个人周邮件。软件只上传随机预约范围标识、窗口名称和时间；收件邮箱由云端授权确定。无需配置 GitHub 权限。
+
 # 0.1.0 · 本地与云端预约
 
 本地代码仓库是 [token-reset-desktop](https://github.com/Brandon030722/token-reset-desktop)，现有云端服务位于 [token-reset](https://github.com/Brandon030722/token-reset)。后者继续保存 Secrets、运行定时任务和发信，独立仓库不会自动成为新的发信端。

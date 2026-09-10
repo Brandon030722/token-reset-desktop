@@ -185,17 +185,8 @@ public sealed class MainWindow : Window
             string path = Uri.UnescapeDataString(new Uri(e.Request.Uri).AbsolutePath);
             if (path == "/config.json")
             {
-                string subscription = "";
-                string configPath = Path.Combine(home, "web.config.json");
-                if (File.Exists(configPath))
-                {
-                    using var config = JsonDocument.Parse(ReadSmallFile(configPath, 16_384));
-                    if (config.RootElement.ValueKind == JsonValueKind.Object &&
-                        config.RootElement.TryGetProperty("subscriptionUrl", out var value) &&
-                        value.ValueKind == JsonValueKind.String && IsExternal(value.GetString()))
-                        subscription = value.GetString()!;
-                }
-                Reply(e, 200, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(new { subscriptionUrl = subscription }));
+                // No legacy hosted form is exposed. Windows currently remains dashboard-only.
+                Reply(e, 200, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(new { subscriptionConfigured = false, subscriptionStatus = "none", emailDelivery = "cloud" }));
                 return;
             }
             if (path is "/data/snapshot.json" or "/data/health.json")

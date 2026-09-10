@@ -65,6 +65,7 @@ final class LocalResources: NSObject, WKURLSchemeHandler {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, UNUserNotificationCenterDelegate, NSMenuDelegate {
+    var emailBusy = false
     var window: NSWindow?
     var webView: WKWebView?
     var statusItem: NSStatusItem!
@@ -282,22 +283,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNa
         }
         if body["type"] as? String == "notification.authorize" { authorizeNotifications() }
         if body["type"] as? String == "notification.test" { testNotification() }
-        if body["type"] as? String == "email.invite.verify", let code = body["code"] as? String {
-            let passed = emailAccess.verify(code)
-            emitEmail(passed ? "邀请码已验证。完成邮箱确认后才算订阅成功。" : "邀请码不正确，请检查后重试。", success: passed)
-        }
-        if body["type"] as? String == "email.configure", let url = body["subscriptionUrl"] as? String {
-            do {
-                try emailAccess.saveForm(url)
-                emitEmail(url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "已移除订阅表单地址。" : "订阅入口已保存；后台自动发信仍需单独配置。", success: true)
-            } catch { emitEmail("保存失败，请填写有效的 HTTPS 表单地址。", success: false) }
-        }
-        if body["type"] as? String == "email.subscribe" {
-            if let url = emailAccess.subscriptionURL {
-                let opened = NSWorkspace.shared.open(url)
-                emitEmail(opened ? "已打开订阅表单，请按邮件提示确认邮箱。" : "未能打开订阅表单，请稍后重试。", success: opened)
-            } else {
-                emitEmail(emailAccess.unlocked ? "邀请码已通过，邮件服务尚未配置。" : "请先验证邀请码。", success: false)
+        if let type = body["type"] as? String, ["email.subscribe", "email.status", "email.cancel"].contains(type) {
+            guard !emailBusy else { return }
+            emailBusy = true
+            emailAccess.request(String(type.dropFirst(6)), email: body["email"] as? String ?? "", invite: body["code"] as? String ?? "") { [weak self] message, success in
+                self?.emailBusy = false
+                self?.emitEmail(message, success: success)
             }
         }
         if body["type"] as? String == "preferences.save", let key = body["key"] as? String,

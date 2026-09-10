@@ -19,6 +19,7 @@ from pathlib import Path
 from .feeds import date, stamp
 from .store import Store, atomic_json, process_lock
 from .weekly_cloud import sync as sync_weekly_cloud
+from .mail_service import sync as sync_subscriber_mail, read_session as read_mail_session
 
 WEEK_MINUTES = 7 * 24 * 60
 POLL_SECONDS = 15 * 60
@@ -181,6 +182,26 @@ def current_candidate(store, now):
     return None, 'no-weekly-reset-due'
 
 
+def sync_mail(config, directory, store, snapshot, now):
+    session = read_mail_session(directory)
+    if session and session.get('subscriptionStatus') == 'active':
+        old = store.get('weeklyCloudPrivate') or {}
+        prepared = store.get('weeklyCloudPrepared') or {}
+        if old.get('entries') or prepared.get('entries'):
+            # Migrate the owner only after durably cancelling the previous GitHub
+            # appointment. Otherwise the two services could send the same mail.
+            legacy = {**config, 'weeklyCloud':{**config.get('weeklyCloud',{}), 'enabled':False}}
+            cancelled = sync_weekly_cloud(legacy, store, snapshot, now)
+            if cancelled.get('status') == 'sync-failed':
+                return {**cancelled, 'configured':True, 'enabled':session.get('weeklyEnabled') is True}
+            store.put('subscriberMailMigrated', True)
+    result = sync_subscriber_mail(directory, store, snapshot, now)
+    if result is not None: return result
+    if store.get('subscriberMailMigrated'):
+        return {'status':'disabled','enabled':False,'configured':False,'pending':0}
+    return sync_weekly_cloud(config, store, snapshot, now)
+
+
 def refresh(config, directory, now=None):
     now = now or datetime.now(timezone.utc)
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
@@ -190,7 +211,7 @@ def refresh(config, directory, now=None):
             previous = store.get('weeklySnapshot') or {}
             attempted = previous.get('attemptedAt')
             if attempted and timedelta(0) <= now-date(attempted) < timedelta(seconds=POLL_SECONDS):
-                cloud = sync_weekly_cloud(config, store, previous, now)
+                cloud = sync_mail(config, directory, store, previous, now)
                 atomic_json(directory/'codex-usage.json', {**{k:v for k,v in previous.items() if k != 'accountKey'}, 'cloudMail': cloud})
                 (directory/'codex-usage.json').chmod(0o600)
                 return {'status': 'cooldown', 'weeklyStatus': previous.get('status'), 'nextCheckAt': stamp(date(attempted)+timedelta(seconds=POLL_SECONDS))}
@@ -203,7 +224,7 @@ def refresh(config, directory, now=None):
                 store.put('weeklySnapshot', snapshot)
             # Identity and outbox are private. The WebView sees quota fields only.
             public = {k:v for k,v in snapshot.items() if k != 'accountKey'}
-            public['cloudMail'] = sync_weekly_cloud(config, store, snapshot, now)
+            public['cloudMail'] = sync_mail(config, directory, store, snapshot, now)
             atomic_json(directory/'codex-usage.json', public)
             for p in (directory/'codex-usage.json', directory/'codex-usage.sqlite3'):
                 p.chmod(0o600)

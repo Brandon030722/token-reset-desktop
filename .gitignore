@@ -29,3 +29,5 @@ public/data/
 web.config.json
 notification-status.json
 *.log
+
+mail-session.json
