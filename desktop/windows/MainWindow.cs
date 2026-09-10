@@ -60,6 +60,7 @@ public sealed class MainWindow : Window
         pause.Click += async (_, _) => { paused = !paused; pause.Text = paused ? "恢复监控" : "暂停监控"; if (paused) await EmitAsync(JsonSerializer.SerializeToElement(new { status = "paused" })); else await CheckAsync(); };
         var advanced = new Forms.ToolStripMenuItem("高级选项");
         advanced.DropDownItems.Add("发送测试通知", null, (_, _) => TestNotification());
+        advanced.DropDownItems.Add("选择 Codex 程序…", null, async (_, _) => await SelectCodexAsync());
         trayMenu.Items.Add(advanced);
         trayMenu.Items.Add("退出", null, (_, _) => { closing = true; Close(); });
         tray.ContextMenuStrip = trayMenu;
@@ -390,6 +391,26 @@ public sealed class MainWindow : Window
         // Claim before submission; uncertain outcomes stay claimed and are never resent automatically.
         tray.ShowBalloonTip(8000, content.GetProperty("title").GetString(), content.GetProperty("body").GetString(), Forms.ToolTipIcon.Info);
         await RunHelperAsync(["--ack-local-notification", eventId, "--claim-token", claim.GetProperty("claimToken").GetString()!, .. suffix], 10);
+    }
+
+    private async Task SelectCodexAsync()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择本机 Codex 程序", Filter = "Codex 程序 (codex.exe)|codex.exe", CheckFileExists = true };
+        if (dialog.ShowDialog() != true || !Path.GetFileName(dialog.FileName).Equals("codex.exe", StringComparison.OrdinalIgnoreCase)) return;
+        await pollGate.WaitAsync();
+        try
+        {
+            string path = Path.Combine(home, "monitor.config.json");
+            var config = File.Exists(path) ? System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path)) as System.Text.Json.Nodes.JsonObject : new System.Text.Json.Nodes.JsonObject();
+            if (config is null) throw new IOException("Invalid local configuration");
+            config["codexExecutable"] = dialog.FileName;
+            string temporary = path + ".new";
+            File.WriteAllText(temporary, config.ToJsonString(), new UTF8Encoding(false));
+            File.Move(temporary, path, true);
+        }
+        catch (Exception) { status.Text = "未能保存 Codex 位置，请检查本机配置。"; }
+        finally { pollGate.Release(); }
+        await CheckAsync();
     }
 
     private void TestNotification()

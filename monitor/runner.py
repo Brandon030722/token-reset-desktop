@@ -139,7 +139,7 @@ def main(argv=None):
                 from .mail_service import set_enabled
                 if not set_enabled(Path(args.state).resolve().parent, args.weekly_email == 'on'):
                     path = Path(args.config)
-                    private = json.loads(path.read_text())
+                    private = json.loads(path.read_text(encoding='utf-8'))
                     settings = private.get('weeklyCloud', {})
                     if not settings.get('repository') or not settings.get('recipient'):
                         raise ValueError('Private weekly cloud configuration required')

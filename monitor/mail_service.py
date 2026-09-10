@@ -17,7 +17,7 @@ def read_session(directory):
     path = Path(directory)/'mail-session.json'
     try:
         if path.stat().st_size > 16384: return None
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding='utf-8'))
         url = urlsplit(data.get('serviceUrl', ''))
         if url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in ('', '/'):
             return None

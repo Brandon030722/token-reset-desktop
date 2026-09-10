@@ -166,7 +166,7 @@ def main():
         if os.environ.get('GITHUB_ACTIONS') != 'true': raise ValueError('Cloud execution only')
         payload = validate(json.loads(raw))
         path = Path('.monitor/weekly-mail.json')
-        ledger = json.loads(path.read_text()) if path.exists() else {}
+        ledger = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         if not isinstance(ledger, dict): raise ValueError('Invalid mail ledger')
         def checkpoint(value):
             atomic_json(path, value)

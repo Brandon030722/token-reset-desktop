@@ -2,17 +2,17 @@
 
 **把反复刷新，变成有消息时的一次提醒。**
 
-一个常驻 Mac 菜单栏的小工具：关注 Tibo 的公开动态，查看 Codex 每周额度，把值得关注的重置消息和下一次恢复时间记下来。
+一个常驻 Mac 菜单栏或 Windows 托盘的小工具：关注 Tibo 的公开动态，查看 Codex 每周额度，把值得关注的重置消息和下一次恢复时间记下来。
 
-**当前版本：0.1.1**
+**当前版本：0.1.2**
 
-[下载 Mac 版](https://github.com/Brandon030722/token-reset-desktop/releases/tag/v0.1.1) · [在线观察看板](https://brandon030722.github.io/token-reset/) · [更新记录](CHANGELOG.md)
+[下载 Mac 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.2/Token-reset-desktop-v0.1.2-macOS-arm64.zip) · [下载 Windows 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.2/Token-reset-desktop-v0.1.2-Windows-x64.zip) · [在线观察看板](https://brandon030722.github.io/token-reset/) · [更新记录](CHANGELOG.md)
 
 ## 可以做什么
 
 ### 平时收起来，需要时点开
 
-黑底白字的 **T!** 图标常驻屏幕顶部。点击打开独立面板，关闭面板后仍继续监控，不需要一直开着网页。
+黑底白字的 **T!** 图标常驻 Mac 屏幕顶部或 Windows 任务栏右侧。点击打开独立面板，关闭面板后仍继续监控，不需要一直开着网页。
 
 面板分为四页，每页只呈现一类信息：
 
@@ -54,11 +54,18 @@
 
 ## 开始使用
 
-目前提供 **Apple 芯片 Mac（M1 及更新机型）**版本，Windows 暂未提供已验证的安装包。
+| 电脑 | 下载后如何打开 |
+| --- | --- |
+| Apple 芯片 Mac（M1 及更新机型） | 解压，将 **Token重置.app** 放入「应用程序」后打开 |
+| Windows x64（Intel / AMD 64 位） | 解压整个目录，双击 **TiboMonitor.exe**；保留目录里的其他文件 |
 
-下载并解压后，将 **Token重置.app** 放入「应用程序」并打开。之后点击屏幕顶部的 **T!** 查看面板，也可以用 Spotlight 搜索「Token重置」。需要本机通知时，请允许系统通知权限。
+之后点击 **T!** 打开面板，右键图标管理监控或退出。Windows 图标可能收在任务栏右侧的隐藏图标里。
 
-更新前先退出旧版本，再替换应用。邮件功能升级为邀请制，旧版本地邀请码不再有效，需要完成新版邮箱确认。
+Windows 包已包含应用运行组件，不需要另外安装 Python、Node.js 或 .NET。若缺少系统 WebView2，应用会提供微软下载入口。
+
+「我的额度」需要本机 Codex 已安装并登录。Windows 暂不直接读取 WSL 内的 Codex；若没有自动找到程序，可在 T! 的高级选项里选择本机 Codex 程序。
+
+更新前先退出旧版本，再替换应用。系统通知是否弹出取决于通知权限和勿扰设置。
 
 ## 关于提醒
 

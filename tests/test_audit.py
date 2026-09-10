@@ -198,7 +198,7 @@ class AuditState(unittest.TestCase):
             result = run(cfg, self.store.path, self.root/'data')
         self.assertEqual(result['status'], 'ok')
         self.assertEqual(result['notification'], 'mail-failed')
-        self.assertEqual(json.loads((self.root/'data/health.json').read_text())['status'], 'ok')
+        self.assertEqual(json.loads((self.root/'data/health.json').read_text(encoding='utf-8'))['status'], 'ok')
         self.assertEqual(notification_candidate(self.store, now+timedelta(seconds=1))['status'], 'candidate')
 
     def test_mail_failure_marks_cli_failure_without_losing_json_success(self):

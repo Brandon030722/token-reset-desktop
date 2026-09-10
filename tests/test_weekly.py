@@ -99,7 +99,7 @@ class WeeklyTests(unittest.TestCase):
         with patch('monitor.codex_usage.read_local',side_effect=CodexUnavailable('chatgpt-login-required')):
             self.assertEqual(refresh({},self.root,END+timedelta(minutes=15))['status'],'unavailable')
         self.assertEqual(notification_candidate(self.store,END+timedelta(minutes=15))['status'],'none')
-        raw=(self.root/'codex-usage.json').read_text()
+        raw=(self.root/'codex-usage.json').read_text(encoding='utf-8')
         self.assertNotIn('private-account-key',raw)
         self.assertNotIn('accountKey',raw)
         self.assertEqual(len(json.loads(raw)['windows']),1)

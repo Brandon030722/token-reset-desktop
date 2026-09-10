@@ -167,6 +167,6 @@ class UploadTests(unittest.TestCase):
         payload={'version':1,'jobs':[]}
         with patch('monitor.weekly_cloud.os.access',return_value=True), patch('monitor.weekly_cloud.subprocess.run') as run:
             run.return_value.returncode=0
-            upload(CONFIG['weeklyCloud'],payload)
+            upload({**CONFIG['weeklyCloud'], 'ghExecutable':str(Path('gh-test.exe').resolve())},payload)
             self.assertEqual(json.loads(run.call_args.kwargs['input']),payload)
             self.assertNotIn(json.dumps(payload),run.call_args.args[0])

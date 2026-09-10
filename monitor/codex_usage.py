@@ -34,9 +34,27 @@ def executable(config):
     candidates = [config.get('codexExecutable'), shutil.which('codex')]
     if sys.platform == 'darwin':
         candidates += ['/Applications/ChatGPT.app/Contents/Resources/codex', '/Applications/Codex.app/Contents/Resources/codex']
+    if sys.platform == 'win32':
+        local = os.environ.get('LOCALAPPDATA')
+        if local:
+            candidates.append(str(Path(local)/'OpenAI'/'Codex'/'bin'/'codex.exe'))
+        # Resolve npm's wrapper to the native binary: never execute a .cmd via a shell.
+        expanded = []
+        for candidate in candidates:
+            if not candidate: continue
+            path = Path(candidate)
+            if path.suffix.lower() in ('.cmd', '.ps1', '.bat'):
+                packages = path.parent/'node_modules'/'@openai'
+                for pattern in ('codex/vendor/*-pc-windows-msvc/codex/codex.exe',
+                                'codex/node_modules/@openai/codex-*/vendor/*-pc-windows-msvc/codex/codex.exe',
+                                'codex-*/vendor/*-pc-windows-msvc/codex/codex.exe'):
+                    expanded.extend(str(p) for p in sorted(packages.glob(pattern)))
+            else: expanded.append(candidate)
+        candidates = expanded
     for candidate in candidates:
         if candidate and Path(candidate).is_absolute() and Path(candidate).is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
+            if sys.platform != 'win32' or Path(candidate).suffix.lower() == '.exe':
+                return str(candidate)
     raise CodexUnavailable('codex-not-found')
 
 
@@ -48,7 +66,8 @@ def read_local(config):
     """
     process = subprocess.Popen([executable(config), 'app-server', '--stdio'],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        start_new_session=os.name != 'nt')
+        start_new_session=os.name != 'nt',
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0)
     lines = queue.Queue(maxsize=64)
     stop = threading.Event()
     def reader():
