@@ -70,3 +70,26 @@ test('limited announcement is valid and visible without any global forecast', ()
   assert.equal(snapshot.evidence.length, 1);
   assert.equal(canAlert(snapshot), false);
 });
+
+test('real Astra announcement is displayed without an invented probability', () => {
+  const code = [
+    'import json,tempfile',
+    'from pathlib import Path',
+    'from datetime import timedelta',
+    'from monitor.store import Store',
+    'from monitor.engine import update',
+    'from tests.test_announcements import NOW,post',
+    'with tempfile.TemporaryDirectory() as d:',
+    ' s=Store(Path(d)/"state.sqlite3")',
+    ' update(s,[],NOW-timedelta(hours=1))',
+    ' print(json.dumps(update(s,[post()],NOW)))',
+    ' s.close()',
+  ].join('\n');
+  const raw = execFileSync(process.platform === 'win32' ? 'python' : 'python3', ['-c', code], { encoding: 'utf8' });
+  const snapshot = parseSnapshot(JSON.parse(raw));
+  assert.equal(snapshot.events[0].announcement, true);
+  assert.equal(snapshot.events[0].title, 'Astra 重置公告');
+  assert.equal(snapshot.events[0].expectedAt, undefined);
+  assert.equal(snapshot.forecast, null);
+  assert.equal(canAlert(snapshot), false);
+});

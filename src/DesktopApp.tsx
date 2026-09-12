@@ -248,7 +248,7 @@ export default function DesktopApp() {
         <div className="token-announcements">{activities.map(item => {
           const sources = data!.evidence.filter(source => item.evidenceIds.includes(source.id) && source.eventId === item.id);
           return <article key={item.id}>
-            <div className="token-announcement-meta"><span>{item.type === 'limited-reset' ? '限定人群' : '广泛重置线索'}</span><time dateTime={item.announcedAt}>{formatTime(item.announcedAt)}</time></div>
+            <div className="token-announcement-meta"><span>{item.announcement ? '重置公告' : item.type === 'limited-reset' ? '限定人群' : '广泛重置线索'}</span><time dateTime={item.announcedAt}>{formatTime(item.announcedAt)}</time></div>
             <h3>{item.title}</h3><p>{item.scope}</p>
             <p className="token-muted">{item.status === 'promised' ? '已公告 · 到账请自行核对' : statusLabels[item.status]}</p>
             <details><summary>查看依据与原文</summary>{sources.map(source => <div key={source.id}><p className="token-original">{source.text}</p><a href={source.url} target="_blank" rel="noopener noreferrer">查看原帖 <Icon name="external" /></a></div>)}</details>

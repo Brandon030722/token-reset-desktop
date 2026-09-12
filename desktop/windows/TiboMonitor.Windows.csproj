@@ -8,7 +8,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>TiboMonitor</AssemblyName>
     <RootNamespace>TiboMonitor.Windows</RootNamespace>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
     <Product>Token重置</Product>
     <ApplicationIcon Condition="Exists('..\assets\AppIcon.ico')">..\assets\AppIcon.ico</ApplicationIcon>
     <DebugType>none</DebugType>

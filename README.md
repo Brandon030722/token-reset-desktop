@@ -4,9 +4,9 @@
 
 一个常驻 Mac 菜单栏或 Windows 托盘的小工具：关注 Tibo 的公开动态，查看 Codex 每周额度，把值得关注的重置消息和下一次恢复时间记下来。
 
-**当前版本：0.1.2**
+**当前版本：0.1.3**
 
-[下载 Mac 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.2/Token-reset-desktop-v0.1.2-macOS-arm64.zip) · [下载 Windows 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.2/Token-reset-desktop-v0.1.2-Windows-x64.zip) · [在线观察看板](https://brandon030722.github.io/token-reset/) · [更新记录](CHANGELOG.md)
+[下载 Mac 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.3/Token-reset-desktop-v0.1.3-macOS-arm64.zip) · [下载 Windows 版](https://github.com/Brandon030722/token-reset-desktop/releases/download/v0.1.3/Token-reset-desktop-v0.1.3-Windows-x64.zip) · [在线观察看板](https://brandon030722.github.io/token-reset/) · [更新记录](CHANGELOG.md)
 
 ## 可以做什么
 
@@ -28,7 +28,7 @@
 约每 **15 分钟**检查一次 Tibo 的公开动态，整理与 Codex 额度重置有关的线索。
 
 - 广泛重置信号评分达到 **80 分**时提醒，同一事件避免重复打扰。
-- 明确的小范围重置或补偿公告也会触发本机通知，并注明适用范围。
+- 明确的重置或补偿公告直接触发本机通知，并注明适用范围。
 - 支持回看相关动态和原帖，判断提醒的依据。
 
 ### 记住你的每周恢复时间

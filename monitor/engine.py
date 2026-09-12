@@ -29,6 +29,7 @@ def _limited_compensation(text):
 
 
 RULES_VERSION = "rules-v2"
+ANNOUNCEMENT_RULES_VERSION = "announcements-v1"
 # These are ordinal policy scores, not probabilities learned from outcomes.
 # A promise can cross 80 only if all four hard gates are met in one clause:
 # Codex reset action, explicit commitment, broad audience, bounded time.
@@ -74,12 +75,73 @@ def _strong(t):
     return _reset_clause(t) and not t.rstrip().endswith('?') and not re.search(HEDGED, t)
 
 
+def _direct_announcement(text):
+    """An explicit product announcement is independent of the global score.
+
+    A greeting may identify the product while the reset appears later in the
+    same post. It does not establish paid-plan eligibility or the author's
+    timezone. Unrelated quality/incident paragraphs are not reset commitments.
+    """
+    clauses = _clauses(text)
+    if any(_strong(c) and _broad_scope(c) and re.search(ACTION + '|' + COMPLETED, c)
+           for c in clauses):
+        return None
+    addressed = set()
+    for clause in clauses[:2]:
+        match = re.match(r"^(?:(?:hi|hey|hello)\s+)?(astra|codex)\s+users\b", clause)
+        if match:
+            addressed.add(match[1])
+    future = (r"\bresets?\s+(?:is|are)\s+(?:also\s+)?(?:landing|coming|rolling out)\b"
+              r"|\bresets?\s+will\s+(?:also\s+)?be\s+(?:done|completed|applied|rolled out)\b")
+    completed = r"\bresets?\s+(?:is|are)\s+(?:now\s+)?(?:complete|completed|done)\b"
+    window = WINDOW + r"|\bby\s+(?:midnight|noon)\b"
+    matches = []
+    for clause in clauses:
+        if (clause.rstrip().endswith('?') or re.search(HEDGED + '|' + NEGATED + '|' + NON_QUOTA, clause)
+                or re.search(r"\b(?:chatgpt|sora|git)\b", clause)):
+            continue
+        if not re.search(r"\bresets?\b", clause):
+            continue
+        product = set(re.findall(r"\b(astra|codex)\s+(?:users|resets?|(?:usage\s+)?(?:limits|quotas|credits))\b", clause))
+        product = product or addressed
+        if len(product) != 1:
+            continue
+        if re.search(completed + '|' + COMPLETED, clause):
+            status = "confirmed"
+        elif re.search(future + '|' + ACTION, clause) and re.search(window, clause):
+            status = "promised"
+        else:
+            continue
+        matches.append((next(iter(product)), status))
+    # A later cancellation can retract an announcement even without repeating
+    # the product greeting. Never select one of contradictory statements.
+    if any((re.search(r"\bresets?\b", c) and re.search(NEGATED, c))
+           or re.search(r"\b(?:update|correction|actually)\b.*\b(?:cancelled|canceled|not happening)\b", c)
+           for c in clauses):
+        return None
+    if not matches or len({product for product, _ in matches}) != 1:
+        return None
+    product, status = matches[-1]
+    label = "Astra" if product == "astra" else "Codex"
+    return {"status": status, "title": label + (" 重置完成公告" if status == "confirmed" else " 重置公告"),
+            "scope": label + " 用户；具体套餐和适用资格未说明，请以原帖为准。"}
+
+
+def _limited_scope(text):
+    return ("在受影响时段使用过 banked reset 的用户；涉及 ChatGPT Work 和 Codex。"
+            if re.search(r"affected time window", text, re.I) and re.search(r"banked resets", text, re.I) else
+            "仅原帖所述的受影响用户；具体资格请核对原文。" if _limited_compensation(text.lower()) else
+            "仅原帖限定的用户或地区；具体资格请核对原文。")
+
+
 def _limited_action(text):
     t = text.lower().replace("’", "'")
     # A separate explicit broad action takes precedence over incident context.
     if any(_strong(c) and _broad_scope(c) and re.search(ACTION + '|' + COMPLETED, c)
            for c in _clauses(t)):
         return False
+    if _direct_announcement(text):
+        return True
     if _limited_compensation(t):
         return True
     return any(_reset_clause(c) and not _broad_scope(c)
@@ -89,6 +151,8 @@ def _limited_action(text):
 
 def classify(text):
     clauses = _clauses(text)
+    if _direct_announcement(text):
+        return ("context", 0, 0)
     relevant = [c for c in clauses if _reset_clause(c)]
     if not relevant:
         if any(re.match(r"^(?:update|correction|actually)\b", c) and re.search(r"\breset\b", c)
@@ -148,7 +212,8 @@ def _update(store, posts, now):
                 if event["id"] == old["eventId"]:
                     event["reviewRequired"] = True
                     event["reviewReason"] = "source-edited"
-    recovering = store.get("classificationRecoveryVersion") != RULES_VERSION
+    recovering = (store.get("classificationRecoveryVersion") != RULES_VERSION
+                  or store.get("announcementRecoveryVersion") != ANNOUNCEMENT_RULES_VERSION)
     # Recover recognized posts omitted by an earlier classifier without
     # resetting seen IDs or either notification ledger. Replays are idempotent.
     new = [p for p in posts if store.unseen(p["id"]) or (
@@ -164,7 +229,10 @@ def _update(store, posts, now):
             # Limited cohorts must never merge into or retract a global event.
             # Keep the source wording: an announced replacement is not proof
             # that every eligible account has already received it.
-            if kind == "correction":
+            direct = _direct_announcement(post["text"])
+            if direct:
+                title, status = direct["title"], direct["status"]
+            elif kind == "correction":
                 title, status = "小范围补偿撤回线索", "retracted"
             elif kind == "context":
                 completed = any(re.search(COMPLETED, c) for c in _clauses(post["text"]))
@@ -173,23 +241,20 @@ def _update(store, posts, now):
                 title, status = "小范围重置线索", "watching"
             eid = "post-" + post["id"]
             event_id = "limited-" + post["id"]
-            scope = ("在受影响时段使用过 banked reset 的用户；涉及 ChatGPT Work 和 Codex。"
-                     if re.search(r"affected time window", post["text"], re.I) and
-                     re.search(r"banked resets", post["text"], re.I) else
-                     "仅原帖所述的受影响用户；具体资格请核对原文。" if _limited_compensation(post["text"].lower()) else
-                     "仅原帖限定的用户或地区；具体资格请核对原文。")
+            scope = direct["scope"] if direct else _limited_scope(post["text"])
             current["events"].append({
                 "id": event_id, "title": title, "type": "limited-reset", "status": status,
                 "scope": scope, "announcedAt": post["postedAt"], "evidenceIds": [eid],
+                **({"announcement": True} if direct else {}),
+                **({"notificationSuppressed": True} if bootstrap else {}),
             })
             current["evidence"].append({
                 "id": eid, "eventId": event_id, "author": "@thsottiaux", "postedAt": post["postedAt"],
                 "text": post["text"], "url": post["url"], "kind": kind,
-                "summary": ("原帖宣布限定范围的额度重置；不代表全体用户适用，完成情况请核对原文。"
+                "summary": ("原帖明确宣布重置；具体套餐和适用资格未说明，时间以原帖为准。" if direct else
+                            "原帖宣布限定范围的额度重置；不代表全体用户适用，完成情况请核对原文。"
                             if kind == "context" else "限定人群的相关表述，请核对原文和最新进展。"),
             })
-            # MailerLite remains governed exclusively by the global forecast.
-            store.claim(event_id, "scope-excluded", stamp(now))
             continue
         candidates = [e for e in current["events"]
                       if e["type"] == "global-reset" and not e.get("reviewRequired") and e["status"] in ("watching", "promised")
@@ -309,7 +374,50 @@ def _update(store, posts, now):
     store.mark_seen(p["id"] for p in new)
     store.put("initialized", True)
     store.put("classificationRecoveryVersion", RULES_VERSION)
+    store.put("announcementRecoveryVersion", ANNOUNCEMENT_RULES_VERSION)
     return current
+
+
+def announcement_candidates(snapshot, now, *, allow_bootstrap=False):
+    """Recent explicit announcements, revalidated independently of forecasting.
+
+    Returns event/source pairs. Delivery channels keep their own durable ledger;
+    first-run archives, stale snapshots and old announcements are never sent.
+    """
+    candidates = []
+    try:
+        if (snapshot.get("mode") != "live"
+                or not timedelta(0) <= now - date(snapshot["checkedAt"]) <= timedelta(hours=1)):
+            return []
+        for event in snapshot["events"]:
+            if (event.get("reviewRequired") or (event.get("notificationSuppressed") and not allow_bootstrap)
+                    or event["type"] != "limited-reset" or event["status"] not in ("promised", "confirmed")
+                    or not timedelta(0) <= now - date(event["announcedAt"]) < timedelta(hours=24)
+                    or len(event["evidenceIds"]) != 1):
+                continue
+            sources = [source for source in snapshot["evidence"]
+                       if source["id"] in event["evidenceIds"] and source["eventId"] == event["id"]]
+            if len(sources) != 1:
+                continue
+            source = sources[0]
+            match = re.fullmatch(r"https://x\.com/thsottiaux/status/(\d+)", source["url"])
+            if (not match or source.get("author") != "@thsottiaux"
+                    or source["id"] != "post-" + match[1] or event["id"] != "limited-" + match[1]
+                    or date(source["postedAt"]) != date(event["announcedAt"])
+                    or source["kind"] != "context" or classify(source["text"]) != ("context", 0, 0)):
+                continue
+            direct = _direct_announcement(source["text"])
+            expected = direct or {
+                "scope": _limited_scope(source["text"]),
+                "status": "confirmed" if any(re.search(COMPLETED, c) for c in _clauses(source["text"])) else "promised",
+            }
+            if (event["scope"] != expected["scope"] or event["status"] != expected["status"]
+                    or bool(event.get("announcement")) != bool(direct)):
+                continue
+            candidates.append({"event": event, "source": source})
+        return candidates
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        return []
 
 
 def eligible(snapshot, now):

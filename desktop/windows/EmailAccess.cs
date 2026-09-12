@@ -40,7 +40,7 @@ internal sealed class EmailAccess(string home, string site)
         if (ValidateEndpoint(endpoint) is null || action is not ("subscribe" or "status" or "cancel")) return "邮件服务尚未开放，看板可照常使用。";
         var saved = Read(SessionPath);
         using var request = new HttpRequestMessage(action == "status" ? HttpMethod.Get : HttpMethod.Post, endpoint + "/v1/" + action);
-        request.Headers.UserAgent.ParseAdd("TokenResetDesktop/0.1.2");
+        request.Headers.UserAgent.ParseAdd("TokenResetDesktop/0.1.3");
         if (action == "subscribe")
         {
             if (email.Length is 0 or > 254 || code.Length is 0 or > 128) return "请填写邮箱和邀请码。";

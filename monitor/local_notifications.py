@@ -11,7 +11,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from .engine import classify, eligible
+from .engine import classify, eligible, announcement_candidates
 from .feeds import date, stamp
 from .store import Store, process_lock
 
@@ -80,21 +80,12 @@ def _current_candidate(store, now):
                 "probability48h": forecast["probability48h"], "validUntil": forecast["validUntil"],
                 "windowEndsAt": forecast["windowEndsAt"], "sourceUrl": source["url"],
             }))
-        for event in snapshot["events"]:
-            if event.get("reviewRequired") or event["type"] != "limited-reset" or event["status"] not in ("promised", "confirmed"):
-                continue
-            if not (timedelta(0) <= now - date(event["announcedAt"]) < timedelta(hours=48)):
-                continue
-            sources = [e for e in snapshot["evidence"] if e["id"] in event["evidenceIds"]
-                       and e["eventId"] == event["id"] and e["kind"] == "context" and classify(e["text"]) == ("context", 0, 0)
-                       and re.fullmatch(r"https://x\.com/thsottiaux/status/\d+", e["url"])
-                       and date(e["postedAt"]) <= now]
-            if not sources:
-                continue
+        for announcement in announcement_candidates(snapshot, now, allow_bootstrap=True):
+            event, source = announcement["event"], announcement["source"]
             candidates.append((event, {
-                "eventId": event["id"], "title": "Codex 小范围重置公告",
+                "eventId": event["id"], "title": event["title"],
                 "body": event["scope"] + (" 原帖宣布完成，请自行核对。" if event["status"] == "confirmed" else " 原帖已发布预告，请自行核对到账。"),
-                "sourceUrl": sources[0]["url"],
+                "sourceUrl": source["url"],
             }))
         reason = "not-eligible"
         for event, candidate in candidates:

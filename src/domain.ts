@@ -7,7 +7,7 @@ export interface Evidence {
 export interface ResetEvent {
   id: string; title: string; type: 'global-reset' | 'credit-grant' | 'limited-reset';
   status: EventStatus; scope: string; announcedAt?: string; expectedAt?: string;
-  confirmedAt?: string; reviewRequired?: boolean; evidenceIds: string[];
+  confirmedAt?: string; reviewRequired?: boolean; announcement?: boolean; evidenceIds: string[];
 }
 export interface Forecast {
   id: string; eventId: string; probability24h: number; probability48h: number;
@@ -67,6 +67,7 @@ export function parseSnapshot(input: unknown, now = Date.now()): Snapshot {
   }
   for (const e of s.events) {
     if (!id(e.id) || !str(e.title, 240) || !str(e.scope, 500) || !status(e.status) || !['global-reset', 'credit-grant', 'limited-reset'].includes(e.type) || !ids(e.evidenceIds)) fail();
+    if (e.announcement !== undefined && typeof e.announcement !== 'boolean') fail();
     for (const d of [e.announcedAt, e.expectedAt, e.confirmedAt]) if (d && !date(d)) fail();
     if (!e.evidenceIds.every(eid => s.evidence.some(x => x.id === eid && x.eventId === e.id))) fail();
   }
